@@ -17,6 +17,11 @@
 #include <board.h>
 //#include "../components/ota/fota/ota_sha256.h"
 #include "dtls_interface.h"
+#include "flag_manager.h"
+#include "upgrade_flag.h"
+#include "mbedtls/sha256.h"
+
+
 
 
 
@@ -36,6 +41,7 @@
 typedef struct
 {
      uint8_t m_data0[BLOCK_SIZE];
+     ota_opt_s ota_opt;
      //int init_flag;
      atiny_fota_storage_device_s *storage_device;
 }test_fota_s;
@@ -227,7 +233,7 @@ enum {
     TEST_TOTAL_POS = 8,
     TEST_CHECKSUM_POS = 0x33,
     TEST_SHA32_LEN = 32,
-    TEST_DATA_LEN = 1024/*145111*/,
+    TEST_DATA_LEN = 15241/*145111*/,
     TEST_TOTAL_LEN = (TEST_DATA_LEN + TEST_HEAD_LEN),
     TEST_FRAME_SIZE = 1024
 };
@@ -391,10 +397,12 @@ void test_pack_get_frame(test_pack_s *pack, uint32_t idx, uint8_t **buff, uint32
 
 void test_pack_calc_checksum(test_pack_s *pack)
 {
-#if 0
-    ota_sha256_context sha256_context;
-    ota_sha256_init(&sha256_context);
-    ota_sha256_starts(&sha256_context, false);
+#if (FOTA_PACK_CHECKSUM == FOTA_PACK_SHA256)
+    mbedtls_sha256_context sha256_context;
+
+
+    mbedtls_sha256_init(&sha256_context);
+    mbedtls_sha256_starts(&sha256_context, false);
 
     uint32_t frame_num = test_pack_get_frame_num(pack);
     for(uint32_t i = 0; i < frame_num; i++)
@@ -403,11 +411,11 @@ void test_pack_calc_checksum(test_pack_s *pack)
         uint32_t len = 0;
 
         test_pack_get_frame(pack, i, &buff, &len);
-        ota_sha256_update(&sha256_context, buff, len);
+        mbedtls_sha256_update(&sha256_context, buff, len);
     }
 
-    ota_sha256_finish(&sha256_context, test_head_get(&pack->head) + TEST_CHECKSUM_POS);
-    ota_sha256_free(&sha256_context);
+    mbedtls_sha256_finish(&sha256_context, test_head_get(&pack->head) + TEST_CHECKSUM_POS);
+    mbedtls_sha256_free(&sha256_context);
 #endif
 }
 void test_pack_init(test_pack_s *pack)
@@ -422,26 +430,39 @@ void test_pack_init(test_pack_s *pack)
 
 static void test_fota_clear_pack_flash(uint32_t frame_num)
 {
-    test_fota_s *test_fota = &g_test_fota;
-    uint8_t *tmp_data = test_fota_create_data(TEST_FRAME_SIZE, 0);
-    int ret;
-    for(uint32_t i = 0; i < frame_num; i++)
+    uint8_t *tmp_data = test_fota_create_data(g_test_fota.ota_opt.flash_block_size, 0);
+
+    uint32_t len = frame_num * TEST_FRAME_SIZE;
+    uint32_t offset = 0;
+
+    while(len > 0)
     {
-        ret = fota_get_pack_device()->write_software(test_fota->storage_device, TEST_FRAME_SIZE * i,
-                tmp_data, TEST_FRAME_SIZE);
-
-
+        int ret;
+        ret = g_test_fota.ota_opt.write_flash(OTA_FULL_SOFTWARE, tmp_data, g_test_fota.ota_opt.flash_block_size,
+                offset);
         EXPECT_TRUE(TEST_OK == ret);
+        offset += g_test_fota.ota_opt.flash_block_size;
+        if (len > g_test_fota.ota_opt.flash_block_size)
+        {
+            len -= g_test_fota.ota_opt.flash_block_size;
+        }
+        else
+        {
+            len = 0;
+        }
     }
      FREE(tmp_data);
 }
 
 
-static void test_fota_check_pack(test_pack_s *pack, uint8_t *tmp_data)
+static void test_fota_check_pack(test_pack_s *pack)
 {
     uint32_t read_len;
     uint32_t frame_num = test_pack_get_frame_num(pack);
     int ret;
+    uint8_t *tmp_data = test_fota_create_data(TEST_FRAME_SIZE, 0);
+
+    EXPECT_TRUE(tmp_data != NULL);
 
     for(uint32_t i = 0; i < frame_num; i++)
     {
@@ -483,6 +504,7 @@ static void test_fota_check_pack(test_pack_s *pack, uint8_t *tmp_data)
         EXPECT_TRUE(0 == ret);
 
     }
+    FREE(tmp_data);
 }
 
 static void test_software_write_success_with_flag(bool break_flag)
@@ -497,7 +519,6 @@ static void test_software_write_success_with_flag(bool break_flag)
     test_fota_clear_pack_flash(frame_num);
 
     int ret;
-    uint8_t *tmp_data = test_fota_create_data(TEST_FRAME_SIZE, 0);
     uint32_t offset = 0;
     for(uint32_t i = 0; i < frame_num; i++)
     {
@@ -518,10 +539,9 @@ static void test_software_write_success_with_flag(bool break_flag)
     ret =device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, offset);
     EXPECT_TRUE(TEST_OK == ret);
 
-    test_fota_check_pack(&pack, tmp_data);
+    test_fota_check_pack(&pack);
 
     test_pack_destroy(&pack);
-    FREE(tmp_data);
 }
 
 
@@ -600,7 +620,6 @@ static void test_software_write_big_data_success()
     test_fota_clear_pack_flash(frame_num);
 
     int ret;
-    uint8_t *tmp_data = test_fota_create_data(TEST_FRAME_SIZE, 0);
     uint32_t offset = 0;
     uint8_t *big_data = test_fota_create_data(9 * TEST_FRAME_SIZE, 0);
     uint32_t big_len = 0;
@@ -637,16 +656,16 @@ static void test_software_write_big_data_success()
     ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, offset);
     EXPECT_TRUE(TEST_OK == ret);
 
-    test_fota_check_pack(&pack, tmp_data);
+    test_fota_check_pack(&pack);
 
     test_pack_destroy(&pack);
-    FREE(tmp_data);
 }
+
 
 /* write software success mutiple times */
 static void test_software_mutiple_big_data_success(void)
 {
-    for(int i = 0 ; i < 10000; i++)
+    for(int i = 0 ; i < 10; i++)
     {
         TEST_LOG("multiple software %d begin", i);
         test_software_write_big_data_success();
@@ -881,6 +900,29 @@ static void setup()
 }
 #endif
 
+static int test_fota_flag_read(void* buf, int32_t len)
+{
+    int (*read_flash)(ota_flash_type_e type, void *buf, int32_t len, uint32_t location) =
+                g_test_fota.ota_opt.read_flash;
+    if (read_flash)
+    {
+        return read_flash(OTA_UPDATE_INFO, buf, len, 0);
+    }
+    return -1;
+}
+
+static int test_fota_flag_write(const void* buf, int32_t len)
+{
+    int (*write_flash)(ota_flash_type_e type, const void *buf, int32_t len, uint32_t location) =
+                g_test_fota.ota_opt.write_flash;
+
+    if (write_flash)
+    {
+        return write_flash(OTA_UPDATE_INFO, buf, len, 0);
+    }
+    return -1;
+}
+
 
 static void setup()
 {
@@ -889,6 +931,19 @@ static void setup()
     const char *rsa_E = g_rsa_E;
 
     hal_init_ota();
+
+    hal_get_ota_opt(&g_test_fota.ota_opt);
+    g_test_fota.ota_opt.key.rsa_N = rsa_N;
+    g_test_fota.ota_opt.key.rsa_E = rsa_E;
+
+    flag_op_s flag_op;
+    flag_op.func_flag_read = test_fota_flag_read;
+    flag_op.func_flag_write = test_fota_flag_write;
+    (void)flag_init(&flag_op);
+
+    int ret = flag_upgrade_init();
+    EXPECT_TRUE(ret == 0);
+
 
     TEST_LOG("test fota ver09");
     //dtls_int();
@@ -906,13 +961,10 @@ static void setup()
     void (*f)(void) = (void (*)(void))0x3;
     f();*/
 
-    ota_opt_s ota_opt = {0};
 
-    hal_get_ota_opt(&ota_opt);
-    ota_opt.key.rsa_N = rsa_N;
-    ota_opt.key.rsa_E = rsa_E;
 
-    int ret = ota_init_pack_device(&ota_opt);
+
+    ret = ota_init_pack_device(&g_test_fota.ota_opt);
     EXPECT_TRUE(TEST_OK == ret);
 
 }
