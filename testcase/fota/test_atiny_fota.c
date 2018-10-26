@@ -9,8 +9,8 @@
 #include "test_atiny.h"
 #include <string.h>
 #include <stdio.h>
-#include "fota/fota_package_storage_device.h"
-#include "fota_port.h"
+#include "ota/package.h"
+#include "ota_port.h"
 #include "hal_spi_flash.h"
 #include "los_hwi.h"
 //#include "cm_backtrace.h"
@@ -43,7 +43,7 @@ typedef struct
      uint8_t m_data0[BLOCK_SIZE];
      ota_opt_s ota_opt;
      //int init_flag;
-     atiny_fota_storage_device_s *storage_device;
+     pack_storage_device_api_s *storage_device;
 }test_fota_s;
 
 test_fota_s g_test_fota;
@@ -134,7 +134,7 @@ static uint8_t * test_fota_create_data(uint32_t len, uint8_t value)
 static void testWriteAndReadUpdataInfo()
 {
 #if 0
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
 
 
     test_fota_s *test_fota = &g_test_fota;
@@ -197,7 +197,7 @@ static void testWriteAndReadUpdataInfo()
 static void testWriteAndReadUpdataInfoMultipleBlocks()
 {
 #if 0
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
     const uint32_t len = 2 * BLOCK_SIZE + 1111;
@@ -295,7 +295,7 @@ void test_head_write_checksum(test_head_s *head, const uint8_t *buff, uint32_t l
 /*  write part head then break*/
 static void test_software_write_part_head_break()
 {
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
     test_head_s head;
@@ -313,7 +313,7 @@ static void test_software_write_part_head_break()
     ret = device->write_software(device,  tmp_len, write_data + tmp_len, sizeof(write_data) - tmp_len);
     EXPECT_TRUE(TEST_OK == ret);
 
-    ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_FAIL, 0);
+    ret = device->write_software_end(device, PACK_DOWNLOAD_FAIL, 0);
      EXPECT_TRUE(TEST_OK == ret);
 
     uint8_t read_data[WRITE_LEN - TEST_HEAD_LEN];
@@ -331,7 +331,7 @@ static void test_software_write_part_head_break()
 
 static void test_software_write_head_not_continuous(void)
 {
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
     test_head_s head;
@@ -397,7 +397,7 @@ void test_pack_get_frame(test_pack_s *pack, uint32_t idx, uint8_t **buff, uint32
 
 void test_pack_calc_checksum(test_pack_s *pack)
 {
-#if (FOTA_PACK_CHECKSUM == FOTA_PACK_SHA256)
+#if (PACK_CHECKSUM == PACK_SHA256)
     mbedtls_sha256_context sha256_context;
 
 
@@ -509,7 +509,7 @@ static void test_fota_check_pack(test_pack_s *pack)
 
 static void test_software_write_success_with_flag(bool break_flag)
 {
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
     test_pack_s pack;
@@ -531,12 +531,12 @@ static void test_software_write_success_with_flag(bool break_flag)
 
         if(break_flag && i == 4)
         {
-            ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_FAIL, 0);
+            ret = device->write_software_end(device, PACK_DOWNLOAD_FAIL, 0);
             EXPECT_TRUE(TEST_OK == ret);
         }
     }
 
-    ret =device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, offset);
+    ret =device->write_software_end(device, PACK_DOWNLOAD_OK, offset);
     EXPECT_TRUE(TEST_OK == ret);
 
     test_fota_check_pack(&pack);
@@ -563,7 +563,7 @@ static void test_software_write_break_and_success()
 /* write data not continuous */
 static void test_software_write_data_not_continuous()
 {
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
     test_pack_s pack;
@@ -596,13 +596,13 @@ static void test_software_check_sha256()
         0x8d,0x0b,0x39,0x61,0x31,0x32,0x00,0x01,0x73,0x64
     };
 
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
 
     int ret = device->write_software(device,  0, buff, sizeof(buff));
     EXPECT_TRUE(TEST_OK == ret);
-    ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, sizeof(buff));
+    ret = device->write_software_end(device, PACK_DOWNLOAD_OK, sizeof(buff));
     EXPECT_TRUE(TEST_OK == ret);
 }
 
@@ -610,7 +610,7 @@ static void test_software_check_sha256()
 /* write software big data */
 static void test_software_write_big_data_success()
 {
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
     test_pack_s pack;
@@ -653,7 +653,7 @@ static void test_software_write_big_data_success()
     }
     FREE(big_data);
 
-    ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, offset);
+    ret = device->write_software_end(device, PACK_DOWNLOAD_OK, offset);
     EXPECT_TRUE(TEST_OK == ret);
 
     test_fota_check_pack(&pack);
@@ -703,25 +703,25 @@ static void test_software_check_sha256_rsa2048()
         0x48,0x29,0xa1,0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38
     };
 
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
     int ret = device->write_software(device,  0, buff, sizeof(buff));
     EXPECT_TRUE(TEST_OK == ret);
-    ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, sizeof(buff));
+    ret = device->write_software_end(device, PACK_DOWNLOAD_OK, sizeof(buff));
     EXPECT_TRUE(TEST_OK == ret);
 
     uint8_t tmp = buff[sizeof(buff) - 1];
     buff[sizeof(buff) - 1] = 0xff;
     ret = device->write_software(device,  0, buff, sizeof(buff));
     EXPECT_TRUE(TEST_OK == ret);
-    ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, sizeof(buff));
+    ret = device->write_software_end(device, PACK_DOWNLOAD_OK, sizeof(buff));
     EXPECT_TRUE(TEST_OK != ret);
     buff[sizeof(buff) - 1] = tmp;
 
     ret = device->write_software(device,  0, buff, sizeof(buff));
     EXPECT_TRUE(TEST_OK == ret);
-    ret = device->write_software_end(device, ATINY_FOTA_DOWNLOAD_OK, sizeof(buff));
+    ret = device->write_software_end(device, PACK_DOWNLOAD_OK, sizeof(buff));
     EXPECT_TRUE(TEST_OK == ret);
 #endif
 }
@@ -878,17 +878,17 @@ static void setup()
     int ret = hal_init_fota();
     EXPECT_TRUE(TEST_OK == ret);
 
-    atiny_fota_storage_device_s *device = fota_get_pack_device();
+    pack_storage_device_api_s *device = pack_get_device();
     EXPECT_TRUE(device != NULL);
 
-    atiny_fota_storage_device_s *storage_device = NULL;
-    fota_hardware_s *hardware = NULL;
+    pack_storage_device_api_s *storage_device = NULL;
+    pack_hardware_s *hardware = NULL;
     ret = hal_get_fota_device(&storage_device, &hardware);
     EXPECT_TRUE(TEST_OK == ret);
     EXPECT_TRUE(storage_device != NULL);
     EXPECT_TRUE(hardware != NULL);
 
-    fota_pack_device_info_s device_info;
+    pack_device_info_s device_info;
     device_info.storage_device = storage_device;
     device_info.hardware = hardware;
     device_info.head_info_notify = NULL;
@@ -964,7 +964,7 @@ static void setup()
 
 
 
-    ret = ota_init_pack_device(&g_test_fota.ota_opt);
+    ret = pack_init_device(&g_test_fota.ota_opt);
     EXPECT_TRUE(TEST_OK == ret);
 
 }
@@ -980,10 +980,10 @@ void test_init(void)
     test_class_s * test_class;
     TEST_DECLARE_CLASS(test_class, "fota");
     test_class_set(test_class, setup, NULL, NULL, NULL);
-#if (FOTA_PACK_CHECKSUM == FOTA_PACK_SHA256_RSA2048)
+#if (PACK_CHECKSUM == PACK_SHA256_RSA2048)
     TEST_ADD_CASE(test_class, test_mbedtsl_rsa);
     TEST_ADD_CASE(test_class, test_software_check_sha256_rsa2048);
-#elif (FOTA_PACK_CHECKSUM == FOTA_PACK_SHA256)
+#elif (PACK_CHECKSUM == PACK_SHA256)
 
     TEST_ADD_CASE(test_class, testFlashRead);
     //TEST_ADD_CASE(test_class, testMultipleFlashReadWrite);
